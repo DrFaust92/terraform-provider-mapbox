@@ -38,7 +38,7 @@ func main() {
 	flag.Parse()
 
 	opts := providerserver.ServeOpts{
-		Address: "DrFaust92/mapbox",
+		Address: "registry.terraform.io/DrFaust92/mapbox",
 		Debug:   debug,
 	}
 

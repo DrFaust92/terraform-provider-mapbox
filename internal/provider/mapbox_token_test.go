@@ -5,6 +5,7 @@ package provider
 
 import (
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -12,16 +13,17 @@ import (
 
 func TestAccTokenResource(t *testing.T) {
 	resourceName := "mapbox_token.test"
+	name := os.Getenv("MAPBOX_USERNAME")
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			// Create and Read testing
 			{
-				Config: testAccTokenResourceConfig("devops-placer", "https://docs.mapbox.com"),
+				Config: testAccTokenResourceConfig(name, "https://docs.mapbox.com"),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(resourceName, "username", "devops-placer"),
-					resource.TestCheckResourceAttr(resourceName, "note", "devops-placer"),
+					resource.TestCheckResourceAttr(resourceName, "username", name),
+					resource.TestCheckResourceAttr(resourceName, "note", name),
 					resource.TestCheckResourceAttr(resourceName, "scopes.#", "2"),
 					resource.TestCheckTypeSetElemAttr(resourceName, "scopes.*", "fonts:read"),
 					resource.TestCheckTypeSetElemAttr(resourceName, "scopes.*", "styles:read"),
@@ -38,10 +40,10 @@ func TestAccTokenResource(t *testing.T) {
 			},
 			// Update and Read testing
 			{
-				Config: testAccTokenResourceConfig("devops-placer", "https://docs.mapbox1.com"),
+				Config: testAccTokenResourceConfig(name, "https://docs.mapbox1.com"),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(resourceName, "username", "devops-placer"),
-					resource.TestCheckResourceAttr(resourceName, "note", "devops-placer"),
+					resource.TestCheckResourceAttr(resourceName, "username", name),
+					resource.TestCheckResourceAttr(resourceName, "note", name),
 					resource.TestCheckResourceAttr(resourceName, "scopes.#", "2"),
 					resource.TestCheckTypeSetElemAttr(resourceName, "scopes.*", "fonts:read"),
 					resource.TestCheckTypeSetElemAttr(resourceName, "scopes.*", "styles:read"),
