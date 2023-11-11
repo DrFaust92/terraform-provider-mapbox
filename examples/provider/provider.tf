@@ -1,3 +1,3 @@
-provider "scaffolding" {
+provider "mapbox" {
   # example configuration here
 }
