@@ -14,7 +14,7 @@ description: |-
 
 ```terraform
 provider "mapbox" {
-  # example configuration here
+  access_token = "my-secret-token"
 }
 ```
 
