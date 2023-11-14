@@ -1,3 +1,6 @@
 resource "mapbox_token" "example" {
-  configurable_attribute = "some-value"
+  username     = "example"
+  note         = "example"
+  scopes       = ["styles:read", "fonts:read"]
+  allowed_urls = ["https://docs.mapbox.com"]
 }
