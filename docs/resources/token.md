@@ -26,10 +26,13 @@ resource "mapbox_token" "example" {
 
 ### Required
 
-- `allowed_urls` (Set of String) URLs that this token is allowed to work with.
 - `note` (String) A description for the token.
 - `scopes` (Set of String) Specify the scopes that the new token will have. The authorizing token needs to have the same scopes as, or more scopes than, the new token you are creating.
 - `username` (String) The username of the account for which to list scopes.
+
+### Optional
+
+- `allowed_urls` (Set of String) URLs that this token is allowed to work with.
 
 ### Read-Only
 
