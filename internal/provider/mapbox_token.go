@@ -45,7 +45,7 @@ type TokenResourceModel struct {
 }
 
 type tokenCreateBody struct {
-	AllowedUrls []string `json:"allowedUrls"`
+	AllowedUrls []string `json:"allowedUrls,omitempty"`
 	Id          *string  `json:"id,omitempty"`
 	Note        string   `json:"note"`
 	Scopes      []string `json:"scopes"`
@@ -81,7 +81,7 @@ func (r *TokenResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 			"allowed_urls": schema.SetAttribute{
 				ElementType:         types.StringType,
 				MarkdownDescription: "URLs that this token is allowed to work with.",
-				Required:            true,
+				Optional:            true,
 			},
 			"token": schema.StringAttribute{
 				Computed:            true,
