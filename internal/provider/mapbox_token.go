@@ -45,7 +45,7 @@ type TokenResourceModel struct {
 }
 
 type tokenCreateBody struct {
-	AllowedUrls []string `json:"allowedUrls"`
+	AllowedUrls []string `json:"allowedUrls,omitempty"`
 	Id          *string  `json:"id,omitempty"`
 	Note        string   `json:"note"`
 	Scopes      []string `json:"scopes"`
@@ -240,8 +240,10 @@ func (r *TokenResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	data.Username = types.StringValue(userName)
 	data.Token = types.StringValue(*token.Token)
 
-	allowedUrls, _ := types.SetValueFrom(ctx, types.StringType, token.AllowedUrls)
-	data.AllowedUrls = allowedUrls
+	if len(token.AllowedUrls) > 0 {
+		allowedUrls, _ := types.SetValueFrom(ctx, types.StringType, token.AllowedUrls)
+		data.AllowedUrls = allowedUrls
+	}
 
 	scopes, _ := types.SetValueFrom(ctx, types.StringType, token.Scopes)
 	data.Scopes = scopes
