@@ -45,7 +45,7 @@ type TokenResourceModel struct {
 }
 
 type tokenCreateBody struct {
-	AllowedUrls []string `json:"allowedUrls,omitempty"`
+	AllowedUrls []string `json:"allowedUrls"`
 	Id          *string  `json:"id,omitempty"`
 	Note        string   `json:"note"`
 	Scopes      []string `json:"scopes"`
