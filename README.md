@@ -62,3 +62,9 @@ In order to run the full suite of Acceptance tests, run `make testacc`.
 ```shell
 make testacc
 ```
+
+By default, acceptance tests mock Mapbox API calls. To exercise the live Mapbox API instead, set the `MAPBOX_ACCESS_TOKEN` and `MAPBOX_USERNAME` environment variables before running the tests:
+
+```shell
+MAPBOX_ACCESS_TOKEN=<your_token> MAPBOX_USERNAME=<your_username> make testacc
+```

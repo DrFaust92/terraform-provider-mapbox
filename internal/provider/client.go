@@ -3,9 +3,9 @@ package provider
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 )
 
@@ -35,61 +35,92 @@ type Client struct {
 	HTTPClient  *http.Client
 }
 
+var errNoResponse = errors.New("no response returned from API")
+
 // Do Will just call the bitbucket api but also add auth to it and some extra headers
 func (c *Client) Do(method, endpoint string, payload *bytes.Buffer, contentType string) (*http.Response, error) {
 	absoluteendpoint := MapBoxEndpoint + endpoint
-	log.Printf("[DEBUG] Sending request to %s %s", method, absoluteendpoint)
 
+	client := c.httpClient()
+	req, err := c.buildRequest(method, absoluteendpoint, payload, contentType)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("execute request: %w", err)
+	}
+
+	if resp == nil {
+		return nil, fmt.Errorf("%w for %s %s", errNoResponse, method, absoluteendpoint)
+	}
+
+	if err := c.checkAPIError(resp, endpoint); err != nil {
+		return resp, err
+	}
+
+	return resp, nil
+}
+
+func (c *Client) httpClient() *http.Client {
+	if c.HTTPClient != nil {
+		return c.HTTPClient
+	}
+
+	return http.DefaultClient
+}
+
+func (c *Client) buildRequest(method, absoluteendpoint string, payload *bytes.Buffer, contentType string) (*http.Request, error) {
 	var bodyreader io.Reader
-
 	if payload != nil {
-		log.Printf("[DEBUG] With payload %s", payload.String())
 		bodyreader = payload
 	}
 
 	req, err := http.NewRequest(method, absoluteendpoint, bodyreader)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create request: %w", err)
 	}
 
 	if c.AccessToken != nil {
-		log.Printf("[DEBUG] Setting Access Token")
 		q := req.URL.Query()
 		q.Add("access_token", *c.AccessToken)
 		req.URL.RawQuery = q.Encode()
 	}
 
 	if payload != nil && contentType != "" {
-		// Can cause bad request when putting default reviews if set.
 		req.Header.Add("Content-Type", contentType)
 	}
 
 	req.Close = true
+	return req, nil
+}
 
-	resp, err := c.HTTPClient.Do(req)
-	log.Printf("[DEBUG] Resp: %v Err: %v", resp, err)
-	if resp.StatusCode >= 400 || resp.StatusCode < 200 {
-		apiError := Error{
-			StatusCode: resp.StatusCode,
-			Endpoint:   endpoint,
-		}
-
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, err
-		}
-
-		log.Printf("[DEBUG] Resp Body: %s", string(body))
-
-		err = json.Unmarshal(body, &apiError)
-		if err != nil {
-			apiError.APIError.Message = string(body)
-		}
-
-		return resp, error(apiError)
-
+func (c *Client) checkAPIError(resp *http.Response, endpoint string) error {
+	if resp.StatusCode < 400 && resp.StatusCode >= 200 {
+		return nil
 	}
-	return resp, err
+
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	apiError := Error{
+		StatusCode: resp.StatusCode,
+		Endpoint:   endpoint,
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read error response: %w", err)
+	}
+
+	err = json.Unmarshal(body, &apiError)
+	if err != nil {
+		apiError.APIError.Message = string(body)
+	}
+
+	return apiError
 }
 
 // Get is just a helper method to do but with a GET verb

@@ -4,11 +4,25 @@
 package provider
 
 import (
+	"fmt"
+	"os"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 )
+
+func init() {
+	if os.Getenv("MAPBOX_ACCESS_TOKEN") == "" {
+		if err := os.Setenv("MAPBOX_ACCESS_TOKEN", "test-token"); err != nil {
+			panic(fmt.Sprintf("set MAPBOX_ACCESS_TOKEN: %v", err))
+		}
+
+		if err := os.Setenv("MOCK", "1"); err != nil {
+			panic(fmt.Sprintf("set MOCK: %v", err))
+		}
+	}
+}
 
 // testAccProtoV6ProviderFactories are used to instantiate a provider during
 // acceptance testing. The factory function will be invoked for every Terraform

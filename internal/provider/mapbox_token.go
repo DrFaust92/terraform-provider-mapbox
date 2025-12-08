@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -132,6 +131,11 @@ func (r *TokenResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
+	if r.client == nil {
+		resp.Diagnostics.AddError("Client Error", "Provider client is not configured")
+		return
+	}
+
 	urls := make([]string, 0, len(data.AllowedUrls.Elements()))
 	data.AllowedUrls.ElementsAs(ctx, &urls, false)
 
@@ -151,8 +155,6 @@ func (r *TokenResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	log.Printf("[DEBUG] Token Create Body: %s", string(bytedata))
-
 	// If applicable, this is a great opportunity to initialize any necessary
 	// provider client data and make a call using it.
 	httpReq, err := r.client.Post(fmt.Sprintf("tokens/v2/%s", data.Username.ValueString()), bytes.NewBuffer(bytedata))
@@ -160,6 +162,9 @@ func (r *TokenResource) Create(ctx context.Context, req resource.CreateRequest, 
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create token, got error: %s", err))
 		return
 	}
+	defer func() {
+		_ = httpReq.Body.Close()
+	}()
 
 	body, readerr := io.ReadAll(httpReq.Body)
 	if readerr != nil {
@@ -202,12 +207,14 @@ func (r *TokenResource) Read(ctx context.Context, req resource.ReadRequest, resp
 
 	// If applicable, this is a great opportunity to initialize any necessary
 	// provider client data and make a call using it.
-	log.Printf("[DEBUG] Token Username: %s", userName)
 	httpReq, err := r.client.Get(fmt.Sprintf("tokens/v2/%s", userName))
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read token, got error: %s", err))
 		return
 	}
+	defer func() {
+		_ = httpReq.Body.Close()
+	}()
 
 	var tokens []*tokenCreateBody
 	body, readerr := io.ReadAll(httpReq.Body)
@@ -215,8 +222,6 @@ func (r *TokenResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		resp.Diagnostics.AddError("Read Error", fmt.Sprintf("Unable to read token, got error: %s", readerr))
 		return
 	}
-
-	log.Printf("[DEBUG] Tokens Read Body: %s", string(body))
 
 	decodeerr := json.Unmarshal(body, &tokens)
 	if decodeerr != nil {
@@ -233,12 +238,9 @@ func (r *TokenResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		}
 	}
 
-	log.Printf("[DEBUG] Token Read Body: %v", token)
-	log.Printf("[DEBUG] Token: %s", *token.Token)
-
 	data.Note = types.StringValue(token.Note)
 	data.Username = types.StringValue(userName)
-	data.Token = types.StringValue(*token.Token)
+	data.Token = types.StringPointerValue(token.Token)
 
 	if len(token.AllowedUrls) > 0 {
 		allowedUrls, _ := types.SetValueFrom(ctx, types.StringType, token.AllowedUrls)
@@ -281,16 +283,19 @@ func (r *TokenResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 
-	log.Printf("[DEBUG] Token Update Body: %s", string(bytedata))
-
 	id, userName, _ := tokenId(data.Id.ValueString())
 
 	// If applicable, this is a great opportunity to initialize any necessary
 	// provider client data and make a call using it.
-	_, err = r.client.Patch((fmt.Sprintf("tokens/v2/%s/%s", userName, id)), bytes.NewBuffer(bytedata))
+	updateResp, err := r.client.Patch((fmt.Sprintf("tokens/v2/%s/%s", userName, id)), bytes.NewBuffer(bytedata))
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update token, got error: %s", err))
 		return
+	}
+	if updateResp != nil {
+		defer func() {
+			_ = updateResp.Body.Close()
+		}()
 	}
 
 	// Save updated data into Terraform state
@@ -311,10 +316,15 @@ func (r *TokenResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 
 	// If applicable, this is a great opportunity to initialize any necessary
 	// provider client data and make a call using it.
-	_, err := r.client.Delete(fmt.Sprintf("tokens/v2/%s/%s", userName, id))
+	deleteResp, err := r.client.Delete(fmt.Sprintf("tokens/v2/%s/%s", userName, id))
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete token, got error: %s", err))
 		return
+	}
+	if deleteResp != nil {
+		defer func() {
+			_ = deleteResp.Body.Close()
+		}()
 	}
 }
 
