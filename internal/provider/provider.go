@@ -42,6 +42,7 @@ func (p *MapBoxProvider) Schema(ctx context.Context, req provider.SchemaRequest,
 			"access_token": schema.StringAttribute{
 				MarkdownDescription: "Access token to authenticate to mapbox with",
 				Optional:            true,
+				Sensitive:           true,
 			},
 		},
 	}

@@ -22,4 +22,4 @@ provider "mapbox" {
 
 ### Optional
 
-- `access_token` (String) Access token to authenticate to mapbox with
+- `access_token` (String, Sensitive) Access token to authenticate to mapbox with
