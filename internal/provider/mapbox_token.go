@@ -13,6 +13,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/identityschema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -23,6 +24,7 @@ import (
 // Ensure provider defined types fully satisfy framework interfaces.
 var _ resource.Resource = &TokenResource{}
 var _ resource.ResourceWithImportState = &TokenResource{}
+var _ resource.ResourceWithIdentity = &TokenResource{}
 
 func NewTokenResource() resource.Resource {
 	return &TokenResource{}
@@ -41,6 +43,12 @@ type TokenResourceModel struct {
 	Scopes      types.Set    `tfsdk:"scopes"`
 	Token       types.String `tfsdk:"token"`
 	Username    types.String `tfsdk:"username"`
+}
+
+// TokenResourceIdentityModel describes the resource identity data model.
+type TokenResourceIdentityModel struct {
+	TokenId  types.String `tfsdk:"token_id"`
+	Username types.String `tfsdk:"username"`
 }
 
 type tokenCreateBody struct {
@@ -96,6 +104,21 @@ func (r *TokenResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},
+			},
+		},
+	}
+}
+
+func (r *TokenResource) IdentitySchema(ctx context.Context, req resource.IdentitySchemaRequest, resp *resource.IdentitySchemaResponse) {
+	resp.IdentitySchema = identityschema.Schema{
+		Attributes: map[string]identityschema.Attribute{
+			"token_id": identityschema.StringAttribute{
+				RequiredForImport: true,
+				Description:       "Token identifier.",
+			},
+			"username": identityschema.StringAttribute{
+				RequiredForImport: true,
+				Description:       "The username of the account that owns the token.",
 			},
 		},
 	}
@@ -191,6 +214,10 @@ func (r *TokenResource) Create(ctx context.Context, req resource.CreateRequest, 
 
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	resp.Diagnostics.Append(resp.Identity.Set(ctx, TokenResourceIdentityModel{
+		TokenId:  types.StringPointerValue(token.Id),
+		Username: data.Username,
+	})...)
 }
 
 func (r *TokenResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -252,6 +279,10 @@ func (r *TokenResource) Read(ctx context.Context, req resource.ReadRequest, resp
 
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	resp.Diagnostics.Append(resp.Identity.Set(ctx, TokenResourceIdentityModel{
+		TokenId:  types.StringValue(id),
+		Username: types.StringValue(userName),
+	})...)
 }
 
 func (r *TokenResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
@@ -300,6 +331,10 @@ func (r *TokenResource) Update(ctx context.Context, req resource.UpdateRequest, 
 
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	resp.Diagnostics.Append(resp.Identity.Set(ctx, TokenResourceIdentityModel{
+		TokenId:  types.StringValue(id),
+		Username: types.StringValue(userName),
+	})...)
 }
 
 func (r *TokenResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
@@ -329,6 +364,20 @@ func (r *TokenResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 }
 
 func (r *TokenResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	// Import by identity ("token_id" + "username"), supported on Terraform 1.12+.
+	if req.Identity != nil && req.ID == "" {
+		var identity TokenResourceIdentityModel
+		resp.Diagnostics.Append(req.Identity.Get(ctx, &identity)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+
+		id := fmt.Sprintf("%s:%s", identity.TokenId.ValueString(), identity.Username.ValueString())
+		resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), id)...)
+		return
+	}
+
+	// Import by ID string ("TOKEN-ID:USERNAME"). The following Read populates identity.
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
