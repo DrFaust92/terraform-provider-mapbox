@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/list"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -17,6 +18,7 @@ import (
 
 // Ensure MapBoxProvider satisfies various provider interfaces.
 var _ provider.Provider = &MapBoxProvider{}
+var _ provider.ProviderWithListResources = &MapBoxProvider{}
 
 // MapBoxProvider defines the provider implementation.
 type MapBoxProvider struct {
@@ -84,6 +86,7 @@ func (p *MapBoxProvider) Configure(ctx context.Context, req provider.ConfigureRe
 	client.AccessToken = &accessToken
 	resp.DataSourceData = client
 	resp.ResourceData = client
+	resp.ListResourceData = client
 }
 
 func (p *MapBoxProvider) Resources(ctx context.Context) []func() resource.Resource {
@@ -95,6 +98,12 @@ func (p *MapBoxProvider) Resources(ctx context.Context) []func() resource.Resour
 func (p *MapBoxProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		// NewExampleDataSource,
+	}
+}
+
+func (p *MapBoxProvider) ListResources(ctx context.Context) []func() list.ListResource {
+	return []func() list.ListResource{
+		NewTokenListResource,
 	}
 }
 
