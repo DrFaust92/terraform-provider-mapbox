@@ -7,8 +7,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -180,7 +183,7 @@ func (r *TokenResource) Create(ctx context.Context, req resource.CreateRequest, 
 
 	// If applicable, this is a great opportunity to initialize any necessary
 	// provider client data and make a call using it.
-	httpReq, err := r.client.Post(fmt.Sprintf("tokens/v2/%s", data.Username.ValueString()), bytes.NewBuffer(bytedata))
+	httpReq, err := r.client.Post(fmt.Sprintf("tokens/v2/%s", url.PathEscape(data.Username.ValueString())), bytes.NewBuffer(bytedata))
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create token, got error: %s", err))
 		return
@@ -200,6 +203,11 @@ func (r *TokenResource) Create(ctx context.Context, req resource.CreateRequest, 
 	decodeerr := json.Unmarshal(body, &token)
 	if decodeerr != nil {
 		resp.Diagnostics.AddError("Unmarshall Error", fmt.Sprintf("Unable to create token, got error: %s", decodeerr))
+		return
+	}
+
+	if token.Id == nil || token.Token == nil {
+		resp.Diagnostics.AddError("Unexpected API Response", "Mapbox returned a token without an id or value.")
 		return
 	}
 
@@ -230,51 +238,61 @@ func (r *TokenResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		return
 	}
 
-	id, userName, _ := tokenId(data.Id.ValueString())
-
-	// If applicable, this is a great opportunity to initialize any necessary
-	// provider client data and make a call using it.
-	httpReq, err := r.client.Get(fmt.Sprintf("tokens/v2/%s", userName))
+	id, userName, err := tokenId(data.Id.ValueString())
 	if err != nil {
+		resp.Diagnostics.AddError("Invalid ID", err.Error())
+		return
+	}
+
+	if r.client == nil {
+		resp.Diagnostics.AddError("Client Error", "Provider client is not configured")
+		return
+	}
+
+	tokens, err := r.client.listTokens(userName)
+	if err != nil {
+		if isNotFound(err) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read token, got error: %s", err))
-		return
-	}
-	defer func() {
-		_ = httpReq.Body.Close()
-	}()
-
-	var tokens []*tokenCreateBody
-	body, readerr := io.ReadAll(httpReq.Body)
-	if readerr != nil {
-		resp.Diagnostics.AddError("Read Error", fmt.Sprintf("Unable to read token, got error: %s", readerr))
-		return
-	}
-
-	decodeerr := json.Unmarshal(body, &tokens)
-	if decodeerr != nil {
-		resp.Diagnostics.AddError("Unmarshall Error", fmt.Sprintf("Unable to read token, got error: %s", decodeerr))
 		return
 	}
 
 	var token *tokenCreateBody
 
 	for _, tk := range tokens {
-		if *tk.Id == id {
+		if tk.Id != nil && *tk.Id == id {
 			token = tk
 			break
 		}
 	}
 
-	data.Note = types.StringValue(token.Note)
-	data.Username = types.StringValue(userName)
-	data.Token = types.StringPointerValue(token.Token)
-
-	if len(token.AllowedUrls) > 0 {
-		allowedUrls, _ := types.SetValueFrom(ctx, types.StringType, token.AllowedUrls)
-		data.AllowedUrls = allowedUrls
+	if token == nil {
+		tflog.Warn(ctx, "token not found, removing from state", map[string]any{"token_id": id})
+		resp.State.RemoveResource(ctx)
+		return
 	}
 
-	scopes, _ := types.SetValueFrom(ctx, types.StringType, token.Scopes)
+	data.Note = types.StringValue(token.Note)
+	data.Username = types.StringValue(userName)
+
+	// The list API never returns the value of secret (sk) tokens, keep the
+	// value captured at creation.
+	if token.Token != nil {
+		data.Token = types.StringPointerValue(token.Token)
+	}
+
+	if len(token.AllowedUrls) > 0 {
+		allowedUrls, diags := types.SetValueFrom(ctx, types.StringType, token.AllowedUrls)
+		resp.Diagnostics.Append(diags...)
+		data.AllowedUrls = allowedUrls
+	} else if len(data.AllowedUrls.Elements()) > 0 {
+		data.AllowedUrls = types.SetNull(types.StringType)
+	}
+
+	scopes, diags := types.SetValueFrom(ctx, types.StringType, token.Scopes)
+	resp.Diagnostics.Append(diags...)
 	data.Scopes = scopes
 
 	// Save updated data into Terraform state
@@ -314,11 +332,18 @@ func (r *TokenResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 
-	id, userName, _ := tokenId(data.Id.ValueString())
+	id, userName, err := tokenId(data.Id.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid ID", err.Error())
+		return
+	}
 
-	// If applicable, this is a great opportunity to initialize any necessary
-	// provider client data and make a call using it.
-	updateResp, err := r.client.Patch((fmt.Sprintf("tokens/v2/%s/%s", userName, id)), bytes.NewBuffer(bytedata))
+	if r.client == nil {
+		resp.Diagnostics.AddError("Client Error", "Provider client is not configured")
+		return
+	}
+
+	updateResp, err := r.client.Patch(fmt.Sprintf("tokens/v2/%s/%s", url.PathEscape(userName), url.PathEscape(id)), bytes.NewBuffer(bytedata))
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update token, got error: %s", err))
 		return
@@ -347,11 +372,21 @@ func (r *TokenResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 		return
 	}
 
-	id, userName, _ := tokenId(data.Id.ValueString())
+	id, userName, err := tokenId(data.Id.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid ID", err.Error())
+		return
+	}
 
-	// If applicable, this is a great opportunity to initialize any necessary
-	// provider client data and make a call using it.
-	deleteResp, err := r.client.Delete(fmt.Sprintf("tokens/v2/%s/%s", userName, id))
+	if r.client == nil {
+		resp.Diagnostics.AddError("Client Error", "Provider client is not configured")
+		return
+	}
+
+	deleteResp, err := r.client.Delete(fmt.Sprintf("tokens/v2/%s/%s", url.PathEscape(userName), url.PathEscape(id)))
+	if isNotFound(err) {
+		return
+	}
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete token, got error: %s", err))
 		return
@@ -378,15 +413,91 @@ func (r *TokenResource) ImportState(ctx context.Context, req resource.ImportStat
 	}
 
 	// Import by ID string ("TOKEN-ID:USERNAME"). The following Read populates identity.
+	if _, _, err := tokenId(req.ID); err != nil {
+		resp.Diagnostics.AddError("Invalid Import ID", err.Error())
+		return
+	}
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
 func tokenId(id string) (string, string, error) {
 	parts := strings.Split(id, ":")
 
-	if len(parts) != 2 {
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return "", "", fmt.Errorf("unexpected format of ID (%q), expected TOKEN-ID:USERNAME", id)
 	}
 
 	return parts[0], parts[1], nil
+}
+
+func isNotFound(err error) bool {
+	var apiErr Error
+	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound
+}
+
+// listTokens returns all tokens of an account, following the pagination
+// cursor in the Link header.
+func (c *Client) listTokens(userName string) ([]*tokenCreateBody, error) {
+	var all []*tokenCreateBody
+	seen := map[string]bool{}
+	start := ""
+
+	for {
+		endpoint := fmt.Sprintf("tokens/v2/%s?limit=100", url.PathEscape(userName))
+		if start != "" {
+			endpoint += "&start=" + url.QueryEscape(start)
+		}
+
+		httpResp, err := c.Get(endpoint)
+		if err != nil {
+			return nil, err
+		}
+
+		body, err := io.ReadAll(httpResp.Body)
+		_ = httpResp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("read response: %w", err)
+		}
+
+		var tokens []*tokenCreateBody
+		if err := json.Unmarshal(body, &tokens); err != nil {
+			return nil, fmt.Errorf("decode response: %w", err)
+		}
+		all = append(all, tokens...)
+
+		start = nextPageStart(httpResp.Header.Get("Link"))
+		if start == "" || seen[start] {
+			return all, nil
+		}
+		seen[start] = true
+	}
+}
+
+// nextPageStart extracts the "start" query parameter of the rel="next" link.
+func nextPageStart(linkHeader string) string {
+	for _, link := range strings.Split(linkHeader, ",") {
+		segments := strings.Split(link, ";")
+		if len(segments) < 2 {
+			continue
+		}
+
+		isNext := false
+		for _, param := range segments[1:] {
+			if rel := strings.ReplaceAll(strings.TrimSpace(param), " ", ""); rel == `rel="next"` || rel == "rel=next" {
+				isNext = true
+			}
+		}
+		if !isNext {
+			continue
+		}
+
+		rawURL := strings.Trim(strings.TrimSpace(segments[0]), "<>")
+		u, err := url.Parse(rawURL)
+		if err != nil {
+			return ""
+		}
+		return u.Query().Get("start")
+	}
+
+	return ""
 }

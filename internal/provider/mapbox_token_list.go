@@ -5,9 +5,7 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"slices"
 
 	"github.com/hashicorp/terraform-plugin-framework/list"
@@ -88,29 +86,10 @@ func (r *TokenListResource) List(ctx context.Context, req list.ListRequest, stre
 
 	userName := config.Username.ValueString()
 
-	httpReq, err := r.client.Get(fmt.Sprintf("tokens/v2/%s", userName))
+	tokens, err := r.client.listTokens(userName)
 	if err != nil {
 		result := req.NewListResult(ctx)
 		result.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to list tokens, got error: %s", err))
-		stream.Results = slices.Values([]list.ListResult{result})
-		return
-	}
-	defer func() {
-		_ = httpReq.Body.Close()
-	}()
-
-	body, readerr := io.ReadAll(httpReq.Body)
-	if readerr != nil {
-		result := req.NewListResult(ctx)
-		result.Diagnostics.AddError("Read Error", fmt.Sprintf("Unable to list tokens, got error: %s", readerr))
-		stream.Results = slices.Values([]list.ListResult{result})
-		return
-	}
-
-	var tokens []*tokenCreateBody
-	if decodeerr := json.Unmarshal(body, &tokens); decodeerr != nil {
-		result := req.NewListResult(ctx)
-		result.Diagnostics.AddError("Unmarshall Error", fmt.Sprintf("Unable to list tokens, got error: %s", decodeerr))
 		stream.Results = slices.Values([]list.ListResult{result})
 		return
 	}
