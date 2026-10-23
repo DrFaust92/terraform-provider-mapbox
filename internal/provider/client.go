@@ -7,10 +7,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 )
 
 // Error represents a error from the bitbucket api.
 type Error struct {
+	// Message is the top-level error message returned by the mapbox api.
+	Message  string `json:"message,omitempty"`
 	APIError struct {
 		Message string `json:"message,omitempty"`
 	} `json:"error,omitempty"`
@@ -20,7 +24,12 @@ type Error struct {
 }
 
 func (e Error) Error() string {
-	return fmt.Sprintf("API Error: %d %s %s", e.StatusCode, e.Endpoint, e.APIError.Message)
+	message := e.Message
+	if message == "" {
+		message = e.APIError.Message
+	}
+
+	return fmt.Sprintf("API Error: %d %s %s", e.StatusCode, e.Endpoint, message)
 }
 
 const (
@@ -33,13 +42,19 @@ const (
 type Client struct {
 	AccessToken *string
 	HTTPClient  *http.Client
+	// BaseURL overrides MapBoxEndpoint, used in tests.
+	BaseURL string
 }
 
 var errNoResponse = errors.New("no response returned from API")
 
 // Do Will just call the bitbucket api but also add auth to it and some extra headers
 func (c *Client) Do(method, endpoint string, payload *bytes.Buffer, contentType string) (*http.Response, error) {
-	absoluteendpoint := MapBoxEndpoint + endpoint
+	baseURL := MapBoxEndpoint
+	if c.BaseURL != "" {
+		baseURL = c.BaseURL
+	}
+	absoluteendpoint := baseURL + endpoint
 
 	client := c.httpClient()
 	req, err := c.buildRequest(method, absoluteendpoint, payload, contentType)
@@ -49,7 +64,7 @@ func (c *Client) Do(method, endpoint string, payload *bytes.Buffer, contentType 
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("execute request: %w", err)
+		return nil, fmt.Errorf("execute request: %w", c.redactURLError(err))
 	}
 
 	if resp == nil {
@@ -61,6 +76,20 @@ func (c *Client) Do(method, endpoint string, payload *bytes.Buffer, contentType 
 	}
 
 	return resp, nil
+}
+
+// redactURLError strips the access token from the URL embedded in *url.Error so
+// it does not leak into diagnostics or logs.
+func (c *Client) redactURLError(err error) error {
+	var urlErr *url.Error
+	if !errors.As(err, &urlErr) || c.AccessToken == nil || *c.AccessToken == "" {
+		return err
+	}
+
+	redacted := *urlErr
+	redacted.URL = strings.ReplaceAll(urlErr.URL, url.QueryEscape(*c.AccessToken), "REDACTED")
+	redacted.URL = strings.ReplaceAll(redacted.URL, *c.AccessToken, "REDACTED")
+	return &redacted
 }
 
 func (c *Client) httpClient() *http.Client {
@@ -133,7 +162,7 @@ func (c *Client) Post(endpoint string, jsonpayload *bytes.Buffer) (*http.Respons
 	return c.Do("POST", endpoint, jsonpayload, "application/json")
 }
 
-// Post is just a helper method to do but with a PATCH verb
+// Patch is just a helper method to do but with a PATCH verb
 func (c *Client) Patch(endpoint string, jsonpayload *bytes.Buffer) (*http.Response, error) {
 	return c.Do("PATCH", endpoint, jsonpayload, "application/json")
 }
