@@ -1,6 +1,6 @@
 module github.com/drfaust92/terraform-provider-mapbox
 
-go 1.26.10
+go 1.27.4
 
 require (
 	github.com/hashicorp/terraform-plugin-docs v0.25.0
@@ -8,9 +8,8 @@ require (
 	github.com/hashicorp/terraform-plugin-go v0.31.0
 	github.com/hashicorp/terraform-plugin-log v0.11.0
 	github.com/hashicorp/terraform-plugin-testing v1.16.0
+	gopkg.in/h2non/gock.v1 v1.1.2
 )
-
-require github.com/h2non/parth v0.0.0-20190131123155-b4df798d6542 // indirect
 
 require (
 	github.com/BurntSushi/toml v1.2.1 // indirect
@@ -29,6 +28,7 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/h2non/parth v0.0.0-20190131123155-b4df798d6542 // indirect
 	github.com/hashicorp/cli v1.1.7 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-checkpoint v0.5.0 // indirect
@@ -82,7 +82,6 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260622175928-b703f567277d // indirect
 	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	gopkg.in/h2non/gock.v1 v1.1.2
 	gopkg.in/yaml.v2 v2.3.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
