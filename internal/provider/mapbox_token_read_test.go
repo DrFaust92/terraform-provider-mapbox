@@ -109,6 +109,10 @@ func TestTokenRead_AllowedUrls(t *testing.T) {
 			if got.Token.ValueString() != "sk.stored" {
 				t.Errorf("token = %s, want stored value", got.Token)
 			}
+			// token_id is backfilled from id, including for state written before it existed.
+			if got.TokenId.ValueString() != "abc" {
+				t.Errorf("token_id = %s, want abc", got.TokenId)
+			}
 		})
 	}
 }

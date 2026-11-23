@@ -61,6 +61,7 @@ type TokenResourceModel struct {
 	Scopes      types.Set    `tfsdk:"scopes"`
 	StoreToken  types.Bool   `tfsdk:"store_token"`
 	Token       types.String `tfsdk:"token"`
+	TokenId     types.String `tfsdk:"token_id"`
 	Username    types.String `tfsdk:"username"`
 }
 
@@ -126,9 +127,16 @@ func (r *TokenResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
+			"token_id": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "The Mapbox token ID, e.g. for the `mapbox_token` ephemeral resource.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
 			"id": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "Token identifier",
+				MarkdownDescription: "Resource identifier in the form `<token_id>:<username>`.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},
@@ -289,6 +297,7 @@ func (r *TokenResource) Create(ctx context.Context, req resource.CreateRequest, 
 	// For the purposes of this token code, hardcoding a response value to
 	// save into the Terraform state.
 	data.Id = types.StringValue(fmt.Sprintf("%s:%s", *token.Id, data.Username.ValueString()))
+	data.TokenId = types.StringValue(*token.Id)
 	data.Token = types.StringNull()
 	if data.StoreToken.ValueBool() {
 		data.Token = types.StringValue(*token.Token)
@@ -353,6 +362,7 @@ func (r *TokenResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	}
 
 	data.Note = types.StringValue(token.Note)
+	data.TokenId = types.StringValue(id)
 	data.Username = types.StringValue(userName)
 
 	// Imported resources have no store_token yet; match the schema default.
@@ -432,6 +442,7 @@ func (r *TokenResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	if !data.StoreToken.ValueBool() {
 		data.Token = types.StringNull()
 	}
+	data.TokenId = types.StringValue(id)
 
 	updateResp, err := r.client.Patch(fmt.Sprintf("tokens/v2/%s/%s", url.PathEscape(userName), url.PathEscape(id)), bytes.NewBuffer(bytedata))
 	if err != nil {

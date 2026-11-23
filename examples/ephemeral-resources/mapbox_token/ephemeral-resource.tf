@@ -9,5 +9,5 @@ resource "mapbox_token" "example" {
 ephemeral "mapbox_token" "example" {
   username = mapbox_token.example.username
   # The resource id has the form "<token_id>:<username>".
-  token_id = split(":", mapbox_token.example.id)[0]
+  token_id = mapbox_token.example.token_id
 }

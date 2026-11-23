@@ -37,5 +37,6 @@ resource "mapbox_token" "example" {
 
 ### Read-Only
 
-- `id` (String) Token identifier
+- `id` (String) Resource identifier in the form `<token_id>:<username>`.
 - `token` (String, Sensitive) Token value. Null when `store_token` is `false`.
+- `token_id` (String) The Mapbox token ID, e.g. for the `mapbox_token` ephemeral resource.
