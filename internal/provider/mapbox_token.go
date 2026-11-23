@@ -12,12 +12,14 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/identityschema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -28,6 +30,19 @@ import (
 var _ resource.Resource = &TokenResource{}
 var _ resource.ResourceWithImportState = &TokenResource{}
 var _ resource.ResourceWithIdentity = &TokenResource{}
+var _ resource.ResourceWithValidateConfig = &TokenResource{}
+var _ resource.ResourceWithModifyPlan = &TokenResource{}
+
+// publicScopes are the scopes a public (pk) token may carry. Mapbox returns the
+// value of public tokens from the list API; any other scope makes the token
+// secret (sk), whose value is only returned once, at creation.
+var publicScopes = []string{
+	"styles:tiles",
+	"styles:read",
+	"fonts:read",
+	"datasets:read",
+	"vision:read",
+}
 
 func NewTokenResource() resource.Resource {
 	return &TokenResource{}
@@ -44,6 +59,7 @@ type TokenResourceModel struct {
 	Id          types.String `tfsdk:"id"`
 	Note        types.String `tfsdk:"note"`
 	Scopes      types.Set    `tfsdk:"scopes"`
+	StoreToken  types.Bool   `tfsdk:"store_token"`
 	Token       types.String `tfsdk:"token"`
 	Username    types.String `tfsdk:"username"`
 }
@@ -93,9 +109,18 @@ func (r *TokenResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 				MarkdownDescription: "URLs that this token is allowed to work with.",
 				Optional:            true,
 			},
+			"store_token": schema.BoolAttribute{
+				MarkdownDescription: "Whether to store the token value in the Terraform state. Defaults to `true`. " +
+					"Set to `false` to keep the value out of state and read it with the `mapbox_token` ephemeral resource instead. " +
+					"Only supported for public tokens (scopes limited to `" + strings.Join(publicScopes, "`, `") + "`), " +
+					"because Mapbox only returns the value of secret tokens at creation.",
+				Optional: true,
+				Computed: true,
+				Default:  booldefault.StaticBool(true),
+			},
 			"token": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "Token value",
+				MarkdownDescription: "Token value. Null when `store_token` is `false`.",
 				Sensitive:           true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
@@ -125,6 +150,56 @@ func (r *TokenResource) IdentitySchema(ctx context.Context, req resource.Identit
 			},
 		},
 	}
+}
+
+func (r *TokenResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var data TokenResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if data.StoreToken.IsNull() || data.StoreToken.IsUnknown() || data.StoreToken.ValueBool() {
+		return
+	}
+
+	if data.Scopes.IsNull() || data.Scopes.IsUnknown() {
+		return
+	}
+
+	for _, elem := range data.Scopes.Elements() {
+		scope, ok := elem.(types.String)
+		if !ok || scope.IsNull() || scope.IsUnknown() {
+			continue
+		}
+		if !slices.Contains(publicScopes, scope.ValueString()) {
+			resp.Diagnostics.AddAttributeError(
+				path.Root("store_token"),
+				"Secret token value cannot be kept out of state",
+				fmt.Sprintf("Scope %q makes this a secret token. Mapbox only returns the value of secret tokens once, "+
+					"when they are created, so with store_token = false the value would be lost permanently. "+
+					"Either set store_token = true or limit scopes to the public scopes: %s.",
+					scope.ValueString(), strings.Join(publicScopes, ", ")),
+			)
+			return
+		}
+	}
+}
+
+// ModifyPlan plans token as null when store_token is false so that
+// UseStateForUnknown does not carry a previously stored value forward.
+func (r *TokenResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() {
+		return
+	}
+
+	var storeToken types.Bool
+	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root("store_token"), &storeToken)...)
+	if resp.Diagnostics.HasError() || storeToken.IsUnknown() || storeToken.IsNull() || storeToken.ValueBool() {
+		return
+	}
+
+	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("token"), types.StringNull())...)
 }
 
 func (r *TokenResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -214,7 +289,10 @@ func (r *TokenResource) Create(ctx context.Context, req resource.CreateRequest, 
 	// For the purposes of this token code, hardcoding a response value to
 	// save into the Terraform state.
 	data.Id = types.StringValue(fmt.Sprintf("%s:%s", *token.Id, data.Username.ValueString()))
-	data.Token = types.StringValue(*token.Token)
+	data.Token = types.StringNull()
+	if data.StoreToken.ValueBool() {
+		data.Token = types.StringValue(*token.Token)
+	}
 
 	// Write logs using the tflog package
 	// Documentation: https://terraform.io/plugin/log
@@ -277,9 +355,17 @@ func (r *TokenResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	data.Note = types.StringValue(token.Note)
 	data.Username = types.StringValue(userName)
 
+	// Imported resources have no store_token yet; match the schema default.
+	if data.StoreToken.IsNull() {
+		data.StoreToken = types.BoolValue(true)
+	}
+
 	// The list API never returns the value of secret (sk) tokens, keep the
 	// value captured at creation.
-	if token.Token != nil {
+	switch {
+	case !data.StoreToken.ValueBool():
+		data.Token = types.StringNull()
+	case token.Token != nil:
 		data.Token = types.StringPointerValue(token.Token)
 	}
 
@@ -341,6 +427,10 @@ func (r *TokenResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	if r.client == nil {
 		resp.Diagnostics.AddError("Client Error", "Provider client is not configured")
 		return
+	}
+
+	if !data.StoreToken.ValueBool() {
+		data.Token = types.StringNull()
 	}
 
 	updateResp, err := r.client.Patch(fmt.Sprintf("tokens/v2/%s/%s", url.PathEscape(userName), url.PathEscape(id)), bytes.NewBuffer(bytedata))

@@ -235,3 +235,81 @@ resource "mapbox_token" "test" {
 }
 `, username, note)
 }
+
+func TestAccTokenResource_storeToken(t *testing.T) {
+	resourceName := "mapbox_token.test"
+	username := os.Getenv("MAPBOX_USERNAME")
+	note := "test-note"
+
+	if os.Getenv("MOCK") != "" {
+		tokenEndpoint := fmt.Sprintf("tokens/v2/%s", username)
+		var id = "cmihkow060gbm3fs8s44zh5v7"
+		var token = "pk.eyJ1Ijoi9WRtaW4tY3OuYW5hbGFiIiwiYSh6ImNtaWl3bDhraTBjYmozbXI0sj03ZnFuNDkikW.qLjLLJ4TTQ5VYrHHgwyY3g"
+		body := tokenCreateBody{
+			Note:   note,
+			Id:     &id,
+			Scopes: []string{"styles:read", "fonts:read"},
+			Token:  &token,
+		}
+		defer gock.OffAll()
+
+		gock.New("https://api.mapbox.com").
+			Post(tokenEndpoint).
+			MatchParam("access_token", "test-token").
+			Persist().
+			Reply(http.StatusOK).
+			JSON(body)
+
+		gock.New("https://api.mapbox.com").
+			Get(tokenEndpoint).
+			MatchParam("access_token", "test-token").
+			Persist().
+			Reply(http.StatusOK).
+			JSON([]tokenCreateBody{body})
+
+		gock.New("https://api.mapbox.com").
+			Patch(fmt.Sprintf("%s/%s", tokenEndpoint, id)).
+			MatchParam("access_token", "test-token").
+			Persist().
+			Reply(http.StatusOK).
+			JSON(body)
+
+		gock.New("https://api.mapbox.com").
+			Delete(fmt.Sprintf("%s/%s", tokenEndpoint, id)).
+			MatchParam("access_token", "test-token").
+			Persist().
+			Reply(http.StatusNoContent)
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccTokenResourceConfigStoreToken(username, note, true),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "store_token", "true"),
+					resource.TestCheckResourceAttrSet(resourceName, "token"),
+				),
+			},
+			{
+				Config: testAccTokenResourceConfigStoreToken(username, note, false),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "store_token", "false"),
+					resource.TestCheckNoResourceAttr(resourceName, "token"),
+				),
+			},
+		},
+	})
+}
+
+func testAccTokenResourceConfigStoreToken(username, note string, storeToken bool) string {
+	return fmt.Sprintf(`
+resource "mapbox_token" "test" {
+  username    = %[1]q
+  note        = %[2]q
+  scopes      = ["styles:read", "fonts:read"]
+  store_token = %[3]t
+}
+`, username, note, storeToken)
+}

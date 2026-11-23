@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/ephemeral"
 	"github.com/hashicorp/terraform-plugin-framework/list"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
@@ -19,6 +20,7 @@ import (
 // Ensure MapBoxProvider satisfies various provider interfaces.
 var _ provider.Provider = &MapBoxProvider{}
 var _ provider.ProviderWithListResources = &MapBoxProvider{}
+var _ provider.ProviderWithEphemeralResources = &MapBoxProvider{}
 
 // MapBoxProvider defines the provider implementation.
 type MapBoxProvider struct {
@@ -87,11 +89,18 @@ func (p *MapBoxProvider) Configure(ctx context.Context, req provider.ConfigureRe
 	resp.DataSourceData = client
 	resp.ResourceData = client
 	resp.ListResourceData = client
+	resp.EphemeralResourceData = client
 }
 
 func (p *MapBoxProvider) Resources(ctx context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewTokenResource,
+	}
+}
+
+func (p *MapBoxProvider) EphemeralResources(ctx context.Context) []func() ephemeral.EphemeralResource {
+	return []func() ephemeral.EphemeralResource{
+		NewTokenEphemeralResource,
 	}
 }
 
