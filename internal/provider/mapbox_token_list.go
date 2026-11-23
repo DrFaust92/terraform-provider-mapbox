@@ -115,6 +115,7 @@ func (r *TokenListResource) List(ctx context.Context, req list.ListRequest, stre
 		if req.IncludeResource {
 			model := TokenResourceModel{
 				Id:         types.StringValue(fmt.Sprintf("%s:%s", *token.Id, userName)),
+				TokenId:    types.StringPointerValue(token.Id),
 				Username:   types.StringValue(userName),
 				Note:       types.StringValue(token.Note),
 				Token:      types.StringPointerValue(token.Token),
