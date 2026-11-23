@@ -33,8 +33,9 @@ resource "mapbox_token" "example" {
 ### Optional
 
 - `allowed_urls` (Set of String) URLs that this token is allowed to work with.
+- `store_token` (Boolean) Whether to store the token value in the Terraform state. Defaults to `true`. Set to `false` to keep the value out of state and read it with the `mapbox_token` ephemeral resource instead. Only supported for public tokens (scopes limited to `styles:tiles`, `styles:read`, `fonts:read`, `datasets:read`, `vision:read`), because Mapbox only returns the value of secret tokens at creation.
 
 ### Read-Only
 
 - `id` (String) Token identifier
-- `token` (String, Sensitive) Token value
+- `token` (String, Sensitive) Token value. Null when `store_token` is `false`.

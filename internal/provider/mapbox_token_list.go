@@ -114,10 +114,11 @@ func (r *TokenListResource) List(ctx context.Context, req list.ListRequest, stre
 
 		if req.IncludeResource {
 			model := TokenResourceModel{
-				Id:       types.StringValue(fmt.Sprintf("%s:%s", *token.Id, userName)),
-				Username: types.StringValue(userName),
-				Note:     types.StringValue(token.Note),
-				Token:    types.StringPointerValue(token.Token),
+				Id:         types.StringValue(fmt.Sprintf("%s:%s", *token.Id, userName)),
+				Username:   types.StringValue(userName),
+				Note:       types.StringValue(token.Note),
+				Token:      types.StringPointerValue(token.Token),
+				StoreToken: types.BoolValue(true),
 			}
 
 			scopes, scopeDiags := types.SetValueFrom(ctx, types.StringType, token.Scopes)
