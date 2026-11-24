@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // Error represents a error from the bitbucket api.
@@ -97,8 +98,12 @@ func (c *Client) httpClient() *http.Client {
 		return c.HTTPClient
 	}
 
-	return http.DefaultClient
+	return &http.Client{Timeout: httpTimeout}
 }
+
+// httpTimeout bounds each API request so an unresponsive endpoint cannot hang
+// a plan or apply indefinitely.
+const httpTimeout = 2 * time.Minute
 
 func (c *Client) buildRequest(method, absoluteendpoint string, payload *bytes.Buffer, contentType string) (*http.Request, error) {
 	var bodyreader io.Reader
