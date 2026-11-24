@@ -68,7 +68,7 @@ func (p *MapBoxProvider) Configure(ctx context.Context, req provider.ConfigureRe
 
 	// Example client configuration for data sources and resources
 	client := &Client{
-		HTTPClient: http.DefaultClient,
+		HTTPClient: &http.Client{Timeout: httpTimeout},
 	}
 
 	if data.AccessToken.ValueString() != "" {
